@@ -131,7 +131,7 @@ async function fetchDay(iso) {
 
   await sleep(REQUEST_GAP_MS);
   const t = await fetchTwse(`/rwd/zh/fund/T86?date=${d}&selectType=ALLBUT0999&response=json`);
-  if (t.stat !== 'OK') throw new Error(`三大法人 ${iso} 狀態異常：${t.stat}`);
+  if (t.stat !== 'OK') { if (noData(t)) return { status: 'closed' }; throw new Error(`三大法人 ${iso} 狀態異常：${t.stat}`); }
   if (t.date && String(t.date) !== d) throw new Error(`三大法人 ${iso} 回傳的是 ${t.date} 的資料（疑似快取）`);
   const trust = parseTrust(t);
 
