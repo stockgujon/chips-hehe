@@ -32,7 +32,9 @@ html{background-image:var(--grain)}
 body{background:transparent}
 .wrap{max-width:1120px;margin:0 auto;padding:28px 16px 40px}
 header h1{font-family:var(--serif);font-size:30px;line-height:1.25;margin:4px 0 6px;font-weight:700;letter-spacing:.14em;color:var(--ink)}
-.asof{color:var(--muted);font-size:13px;margin:0;letter-spacing:.02em}
+.asof{color:var(--muted);font-size:13px;margin:0;letter-spacing:.02em;display:flex;flex-wrap:wrap;gap:2px 22px}
+.asof span{white-space:nowrap}
+.asof b{color:var(--ink);font-weight:600}
 .tabs{display:flex;gap:4px;margin:22px 0 0;border-bottom:1px solid var(--rule);overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .tab{appearance:none;border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);
@@ -350,12 +352,22 @@ footer small{display:block;opacity:.7;font-family:var(--font);font-size:12px;let
     ], rows, sort, 'w');
   }
 
+  // 把 UTC 時間轉成台北時間「MM/DD HH:mm」
+  function twTime(iso){
+    if (!iso) return '';
+    var d = new Date(new Date(iso).getTime() + 8 * 3600e3);
+    if (isNaN(d)) return '';
+    var p = function(n){ return String(n).padStart(2, '0'); };
+    return p(d.getUTCMonth() + 1) + '/' + p(d.getUTCDate()) + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+  }
   function updateAsof(){
     var parts = [];
-    if (state.daily) parts.push('每日籌碼 ' + state.daily.asOf);
-    if (state.tech) parts.push('技術資料 ' + state.tech.asOf);
-    if (state.weekly) parts.push('集保資料 ' + state.weekly.asOf);
-    document.getElementById('asof').textContent = parts.length ? parts.join('　') : '資料尚未產生';
+    [['每日籌碼', state.daily], ['技術訊號', state.tech], ['集保大戶', state.weekly]].forEach(function(x){
+      if (!x[1]) return;
+      var t = twTime(x[1].generatedAt);
+      parts.push('<span>' + x[0] + '：資料日 <b>' + mdDate(x[1].asOf) + '</b>' + (t ? '，更新於 ' + t : '') + '</span>');
+    });
+    document.getElementById('asof').innerHTML = parts.length ? parts.join('') : '資料尚未產生';
   }
 
   function load(path, key, errKey, label){
