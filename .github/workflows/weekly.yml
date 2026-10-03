@@ -1,0 +1,41 @@
+name: 每週更新（集保大戶人數）
+
+on:
+  schedule:
+    - cron: '7 0 * * 6'    # 台北週六 08:07
+    - cron: '7 6 * * 6'    # 台北週六 14:07（集保還沒更新時的補抓）
+    - cron: '7 2 * * 0'    # 台北週日 10:07（最後補抓）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-commit          # 與每日更新共用，避免同時 push 撞車
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: 抓取並計算
+        run: node scripts/weekly.mjs
+      - name: 提交資料
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data
+          if git diff --cached --quiet; then echo "資料沒有變動，不需提交"; exit 0; fi
+          git commit -m "每週資料 $(TZ=Asia/Taipei date +'%Y-%m-%d %H:%M')"
+          for i in 1 2 3; do
+            if git push; then exit 0; fi
+            echo "push 被拒，第 $i 次 rebase 後重試"
+            git pull --rebase --autostash
+            sleep 5
+          done
+          exit 1
