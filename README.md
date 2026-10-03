@@ -1,4 +1,4 @@
-# 大戶籌碼雷達
+# 股匠短線儀表板
 
 個人用的籌碼篩選網頁，GitHub Pages 靜態網站加 GitHub Actions 排程，沒有伺服器。
 
