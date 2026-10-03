@@ -91,7 +91,7 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
     <div class="controls">
       <div class="group"><span>指標</span>
         <div class="seg" data-key="dMode">
-          <button data-v="fr" aria-pressed="true">外資持股連升</button>
+          <button data-v="x" aria-pressed="true">外資連買</button>
           <button data-v="it" aria-pressed="false">投信連買</button>
           <button data-v="both" aria-pressed="false">兩者同時</button>
         </div></div>
@@ -137,11 +137,13 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
 
   <details>
     <summary>這些數字怎麼算</summary>
-    <p><strong>外資持股連升</strong>：全體外資及陸資持股比率比前一個交易日高，連續幾天。持平就中斷。資料來源為證交所，僅含上市普通股。</p>
-    <p><strong>投信連買</strong>：投信買賣超為正（買超），連續幾天。累計為這段期間的買超張數合計。</p>
+    <p><strong>外資連買</strong>：外資買賣超為正（買超），連續幾天，採「外陸資買賣超（不含外資自營商）」。累計為這段期間的買超張數合計。</p>
+    <p><strong>投信連買</strong>：投信買賣超為正，連續幾天，算法同上。</p>
+    <p><strong>外資持股%</strong>：全體外資及陸資持股比率，僅供參考。增資、減資或註銷庫藏股會改變分母，比率變動不一定代表外資有買賣。</p>
+    <p>每日資料來源為證交所，目前僅含上市普通股。紅底列為外資與投信同時連買達到所選天數。</p>
     <p><strong>集保大戶人數</strong>：集保結算所股權分散表，每週一次。400 張以上為持股分級 12～15 級合計，1000 張以上為第 15 級（超過 1,000 張）。人數比前一週多才算上升，持平或中間缺週就中斷。</p>
     <p>連升 2 週需要 3 週的資料。集保開放資料只提供最新一週，所以歷史從網站開始運作那週起累積。</p>
-    <p>人數變多不一定代表籌碼集中，增資、減資或分割都會影響，請搭配大戶持股比例一起看。紅底列為兩項期間變化都上升。</p>
+    <p>人數變多不一定代表籌碼集中，增資、減資或分割都會影響，請搭配大戶持股比例一起看。每週頁的紅底列為期間大戶持股比例同步上升。</p>
   </details>
 
   <footer>僅為個人用途，不做任何商業利益行為<small>網頁製作：股匠理財部落</small></footer>
@@ -154,7 +156,7 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
   var repo = location.pathname.split('/').filter(Boolean)[0];
   var BASE = gh && repo ? 'https://raw.githubusercontent.com/' + gh[1] + '/' + repo + '/main/' : './';
 
-  var state = { dMode:'fr', dMin:3, wTier:'400', wMin:2, dq:'', wq:'', wPeople:3, wMkt:'',
+  var state = { dMode:'x', dMin:3, wTier:'400', wMin:2, dq:'', wq:'', wPeople:3, wMkt:'',
     dSort:null, wSort:null, daily:null, weekly:null, dErr:'', wErr:'' };
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -210,23 +212,24 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
     var min = state.dMin, mode = state.dMode;
     var rows = d.rows.filter(function(r){
       if (!match(r, state.dq)) return false;
-      if (mode === 'fr') return r.frS >= min;
+      if (mode === 'x') return r.xS >= min;
       if (mode === 'it') return r.itS >= min;
-      return r.frS >= min && r.itS >= min;
-    }).map(function(r){ r._hot = r.frS >= min && r.itS >= min; return r; });
-    var sort = state.dSort || (mode === 'it' ? {k:'itS', dir:-1} : {k:'frS', dir:-1});
+      return r.xS >= min && r.itS >= min;
+    }).map(function(r){ r._hot = r.xS >= min && r.itS >= min; return r; });
+    var sort = state.dSort || (mode === 'it' ? {k:'itS', dir:-1} : {k:'xS', dir:-1});
     rows = applySort(rows, sort);
     note.innerHTML = '<span class="count">符合 ' + rows.length + ' 檔</span>　資料日 ' + mdDate(d.asOf) +
       '，已存 ' + d.days + ' 個交易日（連續天數最多能算到 ' + d.maxStreak + ' 天）';
     renderTable(table, [
       {t:'股票', k:'c', f:stockCell},
-      {t:'外資持股%', k:'fr', f:function(r){ return r.fr == null ? '—' : r.fr.toFixed(2); }},
-      {t:'較前日', k:'frD1', f:function(r){ return signed(r.frD1, 2); }},
-      {t:'外資連升', k:'frS', f:function(r){ return ticks(r.frS, '天'); }},
-      {t:'期間增減（百分點）', k:'frSD', f:function(r){ return r.frS ? signed(r.frSD, 2) : '—'; }},
+      {t:'外資今日（張）', k:'x', f:function(r){ return signed(r.x); }},
+      {t:'外資連買', k:'xS', f:function(r){ return ticks(r.xS, '天'); }},
+      {t:'外資累計（張）', k:'xSum', f:function(r){ return r.xS ? signed(r.xSum) : '—'; }},
       {t:'投信今日（張）', k:'it', f:function(r){ return signed(r.it); }},
       {t:'投信連買', k:'itS', f:function(r){ return ticks(r.itS, '天'); }},
-      {t:'連買累計（張）', k:'itSum', f:function(r){ return r.itS ? signed(r.itSum) : '—'; }}
+      {t:'投信累計（張）', k:'itSum', f:function(r){ return r.itS ? signed(r.itSum) : '—'; }},
+      {t:'外資持股%', k:'fr', f:function(r){ return r.fr == null ? '—' : r.fr.toFixed(2); }},
+      {t:'較前日', k:'frD1', f:function(r){ return signed(r.frD1, 2); }}
     ], rows, sort, 'd');
   }
 
@@ -293,7 +296,7 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
     var b = e.target.closest('th button'); if (!b) return;
     var k = b.getAttribute('data-k'), which = b.getAttribute('data-s') === 'd' ? 'dSort' : 'wSort';
     var cur = state[which];
-    if (which === 'dSort' && !cur) cur = state.dMode === 'it' ? {k:'itS', dir:-1} : {k:'frS', dir:-1};
+    if (which === 'dSort' && !cur) cur = state.dMode === 'it' ? {k:'itS', dir:-1} : {k:'xS', dir:-1};
     if (which === 'wSort' && !cur) cur = {k:'s' + state.wTier, dir:-1};
     state[which] = {k:k, dir: cur && cur.k === k ? -cur.dir : (k === 'c' ? 1 : -1)};
     which === 'dSort' ? renderDaily() : renderWeekly();
