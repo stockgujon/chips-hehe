@@ -1,6 +1,7 @@
-// 每日：外資持股比率（MI_QFIIS）＋ 投信買賣超（T86），僅上市普通股
+// 每日：外資買賣超、投信買賣超（T86）＋ 外資持股比率（MI_QFIIS，參考用），僅上市普通股
 // 每天的原始資料存成 data/daily/days/YYYY-MM-DD.json，再算出 data/daily/latest.json
 // 漏跑的日子會在下一次執行時自動補回（往回檢查 10 天；初次執行往回補 50 天）
+// 舊版存檔沒有外資買賣超（欄位 x），執行時會自動重抓三大法人表補上
 
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -99,45 +100,61 @@ export function parseForeign(json) {
   return { ratio, names };
 }
 
-// 解析三大法人表：回傳 { net: {code: 投信買賣超張數}, names }
-export function parseTrust(json) {
+// 解析三大法人表：回傳 { x: {code: 外資買賣超張數}, t: {code: 投信買賣超張數}, names }
+// 外資採「外陸資買賣超股數（不含外資自營商）」
+export function parseInst(json) {
   const t = extractTable(json);
   if (!t) throw new Error('三大法人：找不到表格');
   const ci = findCol(t.fields, '證券代號');
   const ni = findCol(t.fields, '證券名稱');
+  let xi = findCol(t.fields, '外陸資買賣超', '不含');
+  if (xi < 0) xi = findCol(t.fields, '外陸資買賣超');
   const ti = findCol(t.fields, '投信買賣超');
-  if (ci < 0 || ti < 0) throw new Error(`三大法人：欄位對不上（${t.fields.join('、')}）`);
-  const net = {}, names = {};
+  if (ci < 0 || ti < 0 || xi < 0) throw new Error(`三大法人：欄位對不上（${t.fields.join('、')}）`);
+  const x = {}, net = {}, names = {};
   for (const row of t.rows) {
     const code = String(row[ci]).trim();
     if (!STOCK_CODE.test(code)) continue;
-    const v = num(row[ti]);
-    if (v == null) continue;
-    net[code] = Math.round(v / 1000); // 股 → 張
+    const xv = num(row[xi]), tv = num(row[ti]);
+    if (xv != null) x[code] = Math.round(xv / 1000); // 股 → 張
+    if (tv != null) net[code] = Math.round(tv / 1000);
     if (ni >= 0) names[code] = String(row[ni]).trim();
   }
-  return { net, names };
+  return { x, t: net, names };
+}
+
+// 三大法人表（主要資料）。休市日證交所回「沒有符合條件的資料」
+async function fetchInst(iso) {
+  const d = compact(iso);
+  const j = await fetchTwse(`/rwd/zh/fund/T86?date=${d}&selectType=ALLBUT0999&response=json`);
+  if (j.stat !== 'OK') {
+    if (noData(j)) return null;
+    throw new Error(`三大法人 ${iso} 狀態異常：${j.stat}`);
+  }
+  if (j.date && String(j.date) !== d) throw new Error(`三大法人 ${iso} 回傳的是 ${j.date} 的資料（疑似快取）`);
+  const inst = parseInst(j);
+  const n = Object.keys(inst.x).length;
+  if (n < MIN_STOCKS) throw new Error(`三大法人 ${iso} 只有 ${n} 檔，疑似不完整`);
+  return inst;
 }
 
 async function fetchDay(iso) {
-  const d = compact(iso);
-  const q = await fetchTwse(`/rwd/zh/fund/MI_QFIIS?date=${d}&selectType=ALLBUT0999&response=json`);
-  if (q.stat !== 'OK') {
-    if (noData(q)) return { status: 'closed' };
-    throw new Error(`外資持股 ${iso} 狀態異常：${q.stat}`);
-  }
-  if (q.date && String(q.date) !== d) throw new Error(`外資持股 ${iso} 回傳的是 ${q.date} 的資料（疑似快取）`);
-  const foreign = parseForeign(q);
+  const inst = await fetchInst(iso);
+  if (!inst) return { status: 'closed' };
 
+  // 外資持股比率只是參考欄位：讀不到不影響當天存檔
+  let foreign = { ratio: {}, names: {} };
   await sleep(REQUEST_GAP_MS);
-  const t = await fetchTwse(`/rwd/zh/fund/T86?date=${d}&selectType=ALLBUT0999&response=json`);
-  if (t.stat !== 'OK') { if (noData(t)) return { status: 'closed' }; throw new Error(`三大法人 ${iso} 狀態異常：${t.stat}`); }
-  if (t.date && String(t.date) !== d) throw new Error(`三大法人 ${iso} 回傳的是 ${t.date} 的資料（疑似快取）`);
-  const trust = parseTrust(t);
-
-  const nf = Object.keys(foreign.ratio).length;
-  if (nf < MIN_STOCKS) throw new Error(`外資持股 ${iso} 只有 ${nf} 檔，疑似不完整`);
-  return { status: 'ok', day: { date: iso, f: foreign.ratio, t: trust.net, n: { ...trust.names, ...foreign.names } } };
+  try {
+    const d = compact(iso);
+    const q = await fetchTwse(`/rwd/zh/fund/MI_QFIIS?date=${d}&selectType=ALLBUT0999&response=json`);
+    if (q.stat !== 'OK') throw new Error(`狀態異常：${q.stat}`);
+    if (q.date && String(q.date) !== d) throw new Error(`回傳的是 ${q.date} 的資料（疑似快取）`);
+    foreign = parseForeign(q);
+  } catch (e) {
+    console.log(`::warning::${iso} 外資持股比率讀取失敗（不影響連買計算）：${e.message}`);
+  }
+  return { status: 'ok', day: { date: iso, x: inst.x, t: inst.t, f: foreign.ratio, n: { ...foreign.names, ...inst.names } } };
 }
 
 async function readJson(path, fallback) {
@@ -149,16 +166,6 @@ async function listDays() {
   } catch { return []; }
 }
 
-// 連續上升（嚴格大於前一筆）的次數
-export function risingStreak(series) {
-  let k = 0;
-  for (let i = series.length - 1; i > 0; i -= 1) {
-    const a = series[i], b = series[i - 1];
-    if (a == null || b == null || !(a > b + 1e-9)) break;
-    k += 1;
-  }
-  return k;
-}
 // 連續為正的次數
 export function positiveStreak(series) {
   let k = 0;
@@ -172,34 +179,39 @@ export function positiveStreak(series) {
 export function buildLatest(days) {
   const last = days[days.length - 1];
   const rows = [];
-  const codes = new Set([...Object.keys(last.f), ...Object.keys(last.t)]);
+  const codes = new Set([...Object.keys(last.x || {}), ...Object.keys(last.t)]);
+  const sumLast = (arr, k) => arr.slice(arr.length - k).reduce((a, b) => a + b, 0);
   for (const c of codes) {
-    const fs = days.map((d) => d.f[c] ?? null);
+    // 某天缺外資資料（x 不存在）時視為 null，連買在那天中斷
+    const xs = days.map((d) => (d.x ? (d.x[c] ?? 0) : null));
     const ts = days.map((d) => d.t[c] ?? 0);
-    const frS = risingStreak(fs);
+    const fs = days.map((d) => (d.f ? d.f[c] ?? null : null));
+    const xS = positiveStreak(xs);
     const itS = positiveStreak(ts);
-    if (frS < 1 && itS < 1) continue;
-    const L = fs.length - 1;
+    if (xS < 1 && itS < 1) continue;
+    const L = days.length - 1;
     const fr = fs[L];
     rows.push({
       c,
       n: last.n[c] || days.findLast((d) => d.n[c])?.n[c] || '',
-      fr,
-      frD1: fr != null && fs[L - 1] != null ? round2(fr - fs[L - 1]) : null,
-      frS,
-      frSD: frS > 0 ? round2(fr - fs[L - frS]) : 0,
+      m: '上市',
+      x: xs[L],
+      xS,
+      xSum: sumLast(xs, xS),
       it: ts[L],
       itS,
-      itSum: ts.slice(ts.length - itS).reduce((a, b) => a + b, 0),
+      itSum: sumLast(ts, itS),
+      fr,
+      frD1: fr != null && fs[L - 1] != null ? round2(fr - fs[L - 1]) : null,
     });
   }
-  rows.sort((a, b) => b.frS - a.frS || b.itS - a.itS || a.c.localeCompare(b.c));
+  rows.sort((a, b) => b.xS - a.xS || b.itS - a.itS || a.c.localeCompare(b.c));
   return {
     asOf: last.date,
     days: days.length,
     firstDate: days[0].date,
     generatedAt: new Date().toISOString(),
-    maxStreak: days.length - 1,
+    maxStreak: days.length,
     rows,
   };
 }
@@ -241,6 +253,26 @@ export async function main() {
     }
   }
 
+  // 舊版存檔沒有外資買賣超：重抓三大法人表補上（只會發生一次）
+  let migrated = 0;
+  for (const d of [...have].sort().slice(-WINDOW)) {
+    const path = `${DAYS_DIR}/${d}.json`;
+    const day = JSON.parse(await readFile(path, 'utf8'));
+    if (day.x) continue;
+    await sleep(REQUEST_GAP_MS);
+    try {
+      const inst = await fetchInst(d);
+      if (!inst) { console.log(`::warning::${d} 補外資資料時證交所回無資料，略過`); continue; }
+      day.x = inst.x;
+      day.t = inst.t;
+      await writeFile(path, JSON.stringify(day));
+      migrated += 1;
+    } catch (e) {
+      console.log(`::warning::${d} 補外資資料失敗，下次再試：${e.message}`);
+    }
+  }
+  if (migrated) console.log(`已為 ${migrated} 個舊交易日補上外資買賣超`);
+
   // 只保留最近 WINDOW 個交易日
   const all = [...have].sort();
   for (const d of all.slice(0, Math.max(0, all.length - WINDOW))) {
@@ -259,14 +291,14 @@ export async function main() {
     process.exitCode = 1;
     return;
   }
-  if (added > 0 || !latestExists) {
+  if (added > 0 || migrated > 0 || !latestExists) {
     const days = [];
     for (const d of keep) days.push(JSON.parse(await readFile(`${DAYS_DIR}/${d}.json`, 'utf8')));
     const latest = buildLatest(days);
     await writeFile(LATEST_PATH, JSON.stringify(latest));
-    const fr = latest.rows.filter((r) => r.frS >= 1).length;
+    const xn = latest.rows.filter((r) => r.xS >= 1).length;
     const it = latest.rows.filter((r) => r.itS >= 1).length;
-    console.log(`完成：資料日 ${latest.asOf}，共 ${keep.length} 個交易日；外資持股連升 ${fr} 檔、投信連買 ${it} 檔`);
+    console.log(`完成：資料日 ${latest.asOf}，共 ${keep.length} 個交易日；外資連買 ${xn} 檔、投信連買 ${it} 檔`);
   } else {
     console.log('沒有新的交易日資料，latest.json 不變');
   }
