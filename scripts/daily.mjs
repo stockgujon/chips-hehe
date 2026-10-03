@@ -1,0 +1,278 @@
+// 每日：外資持股比率（MI_QFIIS）＋ 投信買賣超（T86），僅上市普通股
+// 每天的原始資料存成 data/daily/days/YYYY-MM-DD.json，再算出 data/daily/latest.json
+// 漏跑的日子會在下一次執行時自動補回（往回檢查 10 天；初次執行往回補 50 天）
+
+import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+
+const HOSTS = ['www.twse.com.tw', 'wwwc.twse.com.tw'];
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
+const REQUEST_GAP_MS = 3000;          // 證交所會擋密集請求，每次間隔 3 秒
+const BACKOFF_MS = [2000, 6000, 15000];
+const WINDOW = 30;                    // 保留最近 30 個交易日
+const INITIAL_LOOKBACK_DAYS = 50;     // 資料不足 30 天時往回補的日曆天數
+const ROUTINE_LOOKBACK_DAYS = 10;     // 平常往回檢查漏跑的日曆天數
+const MAX_FETCH_DATES = 40;           // 單次最多抓幾個日期
+const MIN_STOCKS = 500;               // 少於這個檔數視為異常，不寫入
+
+const DIR = process.env.DATA_DIR || 'data/daily';
+const DAYS_DIR = `${DIR}/days`;
+const CLOSED_PATH = `${DIR}/closed.json`;
+const LATEST_PATH = `${DIR}/latest.json`;
+
+const STOCK_CODE = /^[1-9]\d{3}$/;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export function taipeiToday(now = Date.now()) {
+  return new Date(now + 8 * 3600e3).toISOString().slice(0, 10);
+}
+export function addDays(iso, n) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+const weekday = (iso) => new Date(iso + 'T00:00:00Z').getUTCDay();
+const compact = (iso) => iso.replaceAll('-', '');
+
+export function num(s) {
+  if (s == null) return null;
+  const t = String(s).replace(/[,\s]/g, '');
+  if (t === '' || t === '--' || t === '-') return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+const round2 = (x) => Math.round(x * 100) / 100;
+
+async function fetchTwse(pathAndQuery) {
+  const problems = [];
+  for (let round = 0; round <= BACKOFF_MS.length; round += 1) {
+    if (round > 0) await sleep(BACKOFF_MS[round - 1]);
+    for (const host of HOSTS) {
+      const url = `https://${host}${pathAndQuery}`;
+      try {
+        const res = await fetch(url, {
+          headers: { 'User-Agent': UA, Accept: 'application/json,text/plain,*/*' },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(30000),
+        });
+        if (res.status !== 200) { problems.push(`${host} 回應 ${res.status}`); continue; }
+        const text = await res.text();
+        try { return JSON.parse(text); }
+        catch { problems.push(`${host} 內容不是 JSON（開頭：${text.slice(0, 60).replace(/\s+/g, ' ')}）`); }
+      } catch (e) {
+        problems.push(`${host} ${e.name === 'TimeoutError' ? '逾時' : (e.cause?.code || e.message)}`);
+      }
+    }
+  }
+  throw new Error(`讀取失敗：${pathAndQuery}\n  原因：${problems.join('；')}`);
+}
+
+export function extractTable(json) {
+  if (Array.isArray(json?.fields) && Array.isArray(json?.data)) return { fields: json.fields, rows: json.data };
+  if (Array.isArray(json?.tables)) {
+    for (const t of json.tables) {
+      if (Array.isArray(t.fields) && Array.isArray(t.data) && t.data.length) return { fields: t.fields, rows: t.data };
+    }
+  }
+  return null;
+}
+const findCol = (fields, ...keys) => fields.findIndex((f) => keys.every((k) => String(f).includes(k)));
+const noData = (json) => String(json?.stat ?? '').includes('沒有符合');
+
+// 解析外資持股表：回傳 { ratio: {code: 比率}, names: {code: 名稱} }
+export function parseForeign(json) {
+  const t = extractTable(json);
+  if (!t) throw new Error('外資持股：找不到表格');
+  const ci = findCol(t.fields, '證券代號');
+  const ni = findCol(t.fields, '證券名稱');
+  const ri = findCol(t.fields, '全體外資', '持股比率');
+  if (ci < 0 || ri < 0) throw new Error(`外資持股：欄位對不上（${t.fields.join('、')}）`);
+  const ratio = {}, names = {};
+  for (const row of t.rows) {
+    const code = String(row[ci]).trim();
+    if (!STOCK_CODE.test(code)) continue;
+    const r = num(row[ri]);
+    if (r == null) continue;
+    ratio[code] = r;
+    if (ni >= 0) names[code] = String(row[ni]).trim();
+  }
+  return { ratio, names };
+}
+
+// 解析三大法人表：回傳 { net: {code: 投信買賣超張數}, names }
+export function parseTrust(json) {
+  const t = extractTable(json);
+  if (!t) throw new Error('三大法人：找不到表格');
+  const ci = findCol(t.fields, '證券代號');
+  const ni = findCol(t.fields, '證券名稱');
+  const ti = findCol(t.fields, '投信買賣超');
+  if (ci < 0 || ti < 0) throw new Error(`三大法人：欄位對不上（${t.fields.join('、')}）`);
+  const net = {}, names = {};
+  for (const row of t.rows) {
+    const code = String(row[ci]).trim();
+    if (!STOCK_CODE.test(code)) continue;
+    const v = num(row[ti]);
+    if (v == null) continue;
+    net[code] = Math.round(v / 1000); // 股 → 張
+    if (ni >= 0) names[code] = String(row[ni]).trim();
+  }
+  return { net, names };
+}
+
+async function fetchDay(iso) {
+  const d = compact(iso);
+  const q = await fetchTwse(`/rwd/zh/fund/MI_QFIIS?date=${d}&selectType=ALLBUT0999&response=json`);
+  if (q.stat !== 'OK') {
+    if (noData(q)) return { status: 'closed' };
+    throw new Error(`外資持股 ${iso} 狀態異常：${q.stat}`);
+  }
+  if (q.date && String(q.date) !== d) throw new Error(`外資持股 ${iso} 回傳的是 ${q.date} 的資料（疑似快取）`);
+  const foreign = parseForeign(q);
+
+  await sleep(REQUEST_GAP_MS);
+  const t = await fetchTwse(`/rwd/zh/fund/T86?date=${d}&selectType=ALLBUT0999&response=json`);
+  if (t.stat !== 'OK') throw new Error(`三大法人 ${iso} 狀態異常：${t.stat}`);
+  if (t.date && String(t.date) !== d) throw new Error(`三大法人 ${iso} 回傳的是 ${t.date} 的資料（疑似快取）`);
+  const trust = parseTrust(t);
+
+  const nf = Object.keys(foreign.ratio).length;
+  if (nf < MIN_STOCKS) throw new Error(`外資持股 ${iso} 只有 ${nf} 檔，疑似不完整`);
+  return { status: 'ok', day: { date: iso, f: foreign.ratio, t: trust.net, n: { ...trust.names, ...foreign.names } } };
+}
+
+async function readJson(path, fallback) {
+  try { return JSON.parse(await readFile(path, 'utf8')); } catch { return fallback; }
+}
+async function listDays() {
+  try {
+    return (await readdir(DAYS_DIR)).filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).map((f) => f.slice(0, 10)).sort();
+  } catch { return []; }
+}
+
+// 連續上升（嚴格大於前一筆）的次數
+export function risingStreak(series) {
+  let k = 0;
+  for (let i = series.length - 1; i > 0; i -= 1) {
+    const a = series[i], b = series[i - 1];
+    if (a == null || b == null || !(a > b + 1e-9)) break;
+    k += 1;
+  }
+  return k;
+}
+// 連續為正的次數
+export function positiveStreak(series) {
+  let k = 0;
+  for (let i = series.length - 1; i >= 0; i -= 1) {
+    if (!(series[i] > 0)) break;
+    k += 1;
+  }
+  return k;
+}
+
+export function buildLatest(days) {
+  const last = days[days.length - 1];
+  const rows = [];
+  const codes = new Set([...Object.keys(last.f), ...Object.keys(last.t)]);
+  for (const c of codes) {
+    const fs = days.map((d) => d.f[c] ?? null);
+    const ts = days.map((d) => d.t[c] ?? 0);
+    const frS = risingStreak(fs);
+    const itS = positiveStreak(ts);
+    if (frS < 1 && itS < 1) continue;
+    const L = fs.length - 1;
+    const fr = fs[L];
+    rows.push({
+      c,
+      n: last.n[c] || days.findLast((d) => d.n[c])?.n[c] || '',
+      fr,
+      frD1: fr != null && fs[L - 1] != null ? round2(fr - fs[L - 1]) : null,
+      frS,
+      frSD: frS > 0 ? round2(fr - fs[L - frS]) : 0,
+      it: ts[L],
+      itS,
+      itSum: ts.slice(ts.length - itS).reduce((a, b) => a + b, 0),
+    });
+  }
+  rows.sort((a, b) => b.frS - a.frS || b.itS - a.itS || a.c.localeCompare(b.c));
+  return {
+    asOf: last.date,
+    days: days.length,
+    firstDate: days[0].date,
+    generatedAt: new Date().toISOString(),
+    maxStreak: days.length - 1,
+    rows,
+  };
+}
+
+export async function main() {
+  await mkdir(DAYS_DIR, { recursive: true });
+  const today = taipeiToday();
+  const have = new Set(await listDays());
+  const closed = new Set(await readJson(CLOSED_PATH, []));
+
+  const lookback = have.size < WINDOW ? INITIAL_LOOKBACK_DAYS : ROUTINE_LOOKBACK_DAYS;
+  const targets = [];
+  for (let i = lookback; i >= 0; i -= 1) {
+    const d = addDays(today, -i);
+    const w = weekday(d);
+    if (w === 0 || w === 6 || have.has(d) || closed.has(d)) continue;
+    targets.push(d);
+  }
+  const todo = targets.slice(-MAX_FETCH_DATES);
+  console.log(`今天（台北）${today}；已存 ${have.size} 個交易日；這次要檢查 ${todo.length} 個日期`);
+
+  let added = 0, failures = 0, newClosed = 0;
+  for (const [i, d] of todo.entries()) {
+    if (i > 0) await sleep(REQUEST_GAP_MS);
+    try {
+      const r = await fetchDay(d);
+      if (r.status === 'closed') {
+        if (d < today) { closed.add(d); newClosed += 1; console.log(`${d}：休市`); }
+        else console.log(`${d}：今天的資料尚未公布`);
+        continue;
+      }
+      await writeFile(`${DAYS_DIR}/${d}.json`, JSON.stringify(r.day));
+      have.add(d);
+      added += 1;
+      console.log(`${d}：外資 ${Object.keys(r.day.f).length} 檔、投信 ${Object.keys(r.day.t).length} 檔`);
+    } catch (e) {
+      failures += 1;
+      console.log(`::warning::${d} ${e.message}`);
+    }
+  }
+
+  // 只保留最近 WINDOW 個交易日
+  const all = [...have].sort();
+  for (const d of all.slice(0, Math.max(0, all.length - WINDOW))) {
+    await unlink(`${DAYS_DIR}/${d}.json`).catch(() => {});
+  }
+  const keep = all.slice(-WINDOW);
+
+  if (newClosed > 0) {
+    const cutoff = addDays(today, -120);
+    await writeFile(CLOSED_PATH, JSON.stringify([...closed].filter((d) => d >= cutoff).sort()));
+  }
+
+  const latestExists = await readJson(LATEST_PATH, null);
+  if (keep.length === 0) {
+    console.log('::error::還沒有任何一天的資料');
+    process.exitCode = 1;
+    return;
+  }
+  if (added > 0 || !latestExists) {
+    const days = [];
+    for (const d of keep) days.push(JSON.parse(await readFile(`${DAYS_DIR}/${d}.json`, 'utf8')));
+    const latest = buildLatest(days);
+    await writeFile(LATEST_PATH, JSON.stringify(latest));
+    const fr = latest.rows.filter((r) => r.frS >= 1).length;
+    const it = latest.rows.filter((r) => r.itS >= 1).length;
+    console.log(`完成：資料日 ${latest.asOf}，共 ${keep.length} 個交易日；外資持股連升 ${fr} 檔、投信連買 ${it} 檔`);
+  } else {
+    console.log('沒有新的交易日資料，latest.json 不變');
+  }
+  if (failures > 0 && added === 0) process.exitCode = 1;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => { console.log(`::error::${e.stack || e.message}`); process.exitCode = 1; });
+}
