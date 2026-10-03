@@ -24,9 +24,10 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--fo
 .wrap{max-width:1120px;margin:0 auto;padding:20px 16px 40px}
 header h1{font-size:28px;line-height:1.2;margin:8px 0 4px;font-weight:800;letter-spacing:.02em}
 .asof{color:var(--muted);font-size:13px;margin:0}
-.tabs{display:flex;gap:0;margin:20px 0 0;border-bottom:2px solid var(--ink)}
+.tabs{display:flex;gap:0;margin:20px 0 0;border-bottom:2px solid var(--ink);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
 .tab{appearance:none;border:0;background:none;color:var(--muted);font:inherit;font-weight:700;
-  padding:10px 16px;cursor:pointer;border-radius:6px 6px 0 0}
+  padding:10px 16px;cursor:pointer;border-radius:6px 6px 0 0;white-space:nowrap;flex:none}
 .tab[aria-selected="true"]{background:var(--ink);color:var(--paper)}
 .panel{background:var(--sheet);border:1px solid var(--rule);border-top:0;padding:14px 14px 6px}
 .controls{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
@@ -65,6 +66,10 @@ td:first-child a:hover{text-decoration:underline}
 .streak b{min-width:2.2em;text-align:right;font-weight:700}
 tr.hot td{background:var(--up-soft)}
 tr.hot td:first-child{background:var(--up-soft)}
+.badge{display:inline-block;font-size:12px;line-height:1;padding:4px 6px;border-radius:4px;margin-left:4px;
+  border:1px solid var(--up);color:var(--up);font-weight:700}
+.badge:first-child{margin-left:0}
+.warn{font-size:12px;color:var(--muted);border:1px dashed var(--muted);border-radius:4px;padding:2px 5px}
 .empty{padding:28px 6px;text-align:center;color:var(--muted)}
 .err{border-left:4px solid var(--up);background:var(--up-soft);padding:10px 12px;margin:12px 0;font-size:14px}
 details{margin:22px 0 0;font-size:14px;color:var(--muted)}
@@ -84,6 +89,7 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tab-daily" aria-selected="true" aria-controls="panel-daily">每日：外資與投信</button>
+    <button class="tab" role="tab" id="tab-tech" aria-selected="false" aria-controls="panel-tech">每日：技術訊號</button>
     <button class="tab" role="tab" id="tab-weekly" aria-selected="false" aria-controls="panel-weekly">每週：集保大戶</button>
   </div>
 
@@ -106,6 +112,26 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
     </div>
     <p class="note" id="d-note"></p>
     <div class="scroll"><table id="d-table"></table></div>
+  </section>
+
+  <section class="panel" id="panel-tech" role="tabpanel" aria-labelledby="tab-tech" hidden>
+    <div class="controls">
+      <div class="group"><span>訊號</span>
+        <div class="seg" data-key="tSig">
+          <button data-v="brk" aria-pressed="true">帶量突破</button>
+          <button data-v="pull" aria-pressed="false">多頭回測</button>
+          <button data-v="sqz" aria-pressed="false">盤整突破</button>
+          <button data-v="any" aria-pressed="false">全部</button>
+        </div></div>
+      <div class="group"><span>籌碼</span>
+        <select id="tChip" aria-label="籌碼條件">
+          <option value="">不限</option><option value="x">外資連買中</option>
+          <option value="it">投信連買中</option><option value="both">外資投信都在買</option>
+        </select></div>
+      <div class="group"><input type="search" id="tq" placeholder="代號或名稱" aria-label="搜尋代號或名稱"></div>
+    </div>
+    <p class="note" id="t-note"></p>
+    <div class="scroll"><table id="t-table"></table></div>
   </section>
 
   <section class="panel" id="panel-weekly" role="tabpanel" aria-labelledby="tab-weekly" hidden>
@@ -141,6 +167,10 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
     <p><strong>投信連買</strong>：投信買賣超為正，連續幾天，算法同上。</p>
     <p><strong>外資持股%</strong>：全體外資及陸資持股比率，僅供參考。增資、減資或註銷庫藏股會改變分母，比率變動不一定代表外資有買賣。</p>
     <p>每日資料來源為證交所，目前僅含上市普通股。紅底列為外資與投信同時連買達到所選天數。</p>
+    <p><strong>帶量突破</strong>：收盤價高於前 20 個交易日的最高價，成交量達前 20 日均量的 1.5 倍以上，且站上 20 日線。</p>
+    <p><strong>多頭回測</strong>：5 日線 &gt; 20 日線 &gt; 60 日線且 20 日線上揚，前 5 日收盤曾高於 20 日線 3% 以上，今天最低價回到 20 日線上方 2% 以內、收盤守住 20 日線。</p>
+    <p><strong>盤整突破</strong>：前一日 5、10、20 日線彼此差距在 2% 以內，今天收紅上漲、站上三條均線，量比 1.5 倍以上。</p>
+    <p>三組訊號都先排除 20 日均量不足 500 張、收盤高於 20 日線超過 10% 的股票。價格未還原權息，近 20 個交易日內除權息的股票會標示「除息」，均線與新高可能失真。籌碼欄位取自每日籌碼資料，日期可能比技術資料晚一晚更新。技術指標描述的是已發生的走勢，僅供縮小觀察名單參考。</p>
     <p><strong>集保大戶人數</strong>：集保結算所股權分散表，每週一次。400 張以上為持股分級 12～15 級合計，1000 張以上為第 15 級（超過 1,000 張）。人數比前一週多才算上升，持平或中間缺週就中斷。</p>
     <p>連升 2 週需要 3 週的資料。集保開放資料只提供最新一週，所以歷史從網站開始運作那週起累積。</p>
     <p>人數變多不一定代表籌碼集中，增資、減資或分割都會影響，請搭配大戶持股比例一起看。每週頁的紅底列為期間大戶持股比例同步上升。</p>
@@ -156,7 +186,7 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
   var repo = location.pathname.split('/').filter(Boolean)[0];
   var BASE = gh && repo ? 'https://raw.githubusercontent.com/' + gh[1] + '/' + repo + '/main/' : './';
 
-  var state = { dMode:'x', dMin:3, wTier:'400', wMin:2, dq:'', wq:'', wPeople:3, wMkt:'',
+  var state = { tSig:'brk', tChip:'', tq:'', tSort:null, tech:null, tErr:'', dMode:'x', dMin:3, wTier:'400', wMin:2, dq:'', wq:'', wPeople:3, wMkt:'',
     dSort:null, wSort:null, daily:null, weekly:null, dErr:'', wErr:'' };
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -233,6 +263,50 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
     ], rows, sort, 'd');
   }
 
+  var SIG_NAME = { brk:'帶量突破', pull:'多頭回測', sqz:'盤整突破' };
+  function chipMap(){
+    var m = {};
+    if (state.daily) state.daily.rows.forEach(function(r){ m[r.c] = r; });
+    return m;
+  }
+  function renderTech(){
+    var note = document.getElementById('t-note'), table = document.getElementById('t-table');
+    if (state.tErr){ note.innerHTML = '<div class="err">' + state.tErr + '</div>'; table.innerHTML = ''; return; }
+    var t = state.tech; if (!t) return;
+    var chips = chipMap();
+    var rows = t.rows.map(function(r){
+      var ch = chips[r.c] || {};
+      r.xS = ch.xS || 0; r.itS = ch.itS || 0; r._hot = r.xS > 0 && r.itS > 0;
+      return r;
+    }).filter(function(r){
+      if (state.tSig !== 'any' && r.sig.indexOf(state.tSig) < 0) return false;
+      if (state.tChip === 'x' && !r.xS) return false;
+      if (state.tChip === 'it' && !r.itS) return false;
+      if (state.tChip === 'both' && !(r.xS && r.itS)) return false;
+      return match(r, state.tq);
+    });
+    var sort = state.tSort || {k:'vr', dir:-1};
+    rows = applySort(rows, sort);
+    var msg = '';
+    if (!t.ma60Ready) msg += '<br><strong>60 日線資料還不足（已存 ' + t.days + ' 天），多頭回測暫時不會有結果。</strong>';
+    if (state.daily && state.daily.asOf !== t.asOf) msg += '<br>籌碼欄位為 ' + mdDate(state.daily.asOf) + ' 的資料，每晚 23:07 更新。';
+    if (!state.daily) msg += '<br>讀不到每日籌碼資料，籌碼欄位暫時空白。';
+    note.innerHTML = '<span class="count">符合 ' + rows.length + ' 檔</span>　資料日 ' + mdDate(t.asOf) + '，已存 ' + t.days + ' 個交易日' + msg;
+    renderTable(table, [
+      {t:'股票', k:'c', f:stockCell},
+      {t:'收盤', k:'p', f:function(r){ return r.p; }},
+      {t:'漲跌%', k:'chg', f:function(r){ return signed(r.chg, 2); }},
+      {t:'成交量（張）', k:'v', f:function(r){ return fmtInt(r.v); }},
+      {t:'量比', k:'vr', f:function(r){ return r.vr == null ? '—' : r.vr.toFixed(2); }},
+      {t:'20日乖離%', k:'b20', f:function(r){ return signed(r.b20, 2); }},
+      {t:'RSI14', k:'rsi', f:function(r){ return r.rsi == null ? '—' : r.rsi.toFixed(1); }},
+      {t:'訊號', k:'', f:function(r){ return r.sig.map(function(k){ return '<span class="badge">' + SIG_NAME[k] + '</span>'; }).join(''); }},
+      {t:'外資連買', k:'xS', f:function(r){ return r.xS ? '<b>' + r.xS + '</b> 天' : '—'; }},
+      {t:'投信連買', k:'itS', f:function(r){ return r.itS ? '<b>' + r.itS + '</b> 天' : '—'; }},
+      {t:'提醒', k:'', f:function(r){ return r.ex ? '<span class="warn">' + mdDate(r.ex) + ' 除息</span>' : ''; }}
+    ], rows, sort, 't');
+  }
+
   function renderWeekly(){
     var note = document.getElementById('w-note'), table = document.getElementById('w-table');
     if (state.wErr){ note.innerHTML = '<div class="err">' + state.wErr + '</div>'; table.innerHTML = ''; return; }
@@ -263,7 +337,8 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
 
   function updateAsof(){
     var parts = [];
-    if (state.daily) parts.push('每日資料 ' + state.daily.asOf);
+    if (state.daily) parts.push('每日籌碼 ' + state.daily.asOf);
+    if (state.tech) parts.push('技術資料 ' + state.tech.asOf);
     if (state.weekly) parts.push('集保資料 ' + state.weekly.asOf);
     document.getElementById('asof').textContent = parts.length ? parts.join('　') : '資料尚未產生';
   }
@@ -285,21 +360,26 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
       state[key] = /Min$/.test(key) ? Number(v) : v;
       seg.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
       if (key === 'dMode') state.dSort = null;
-      key.charAt(0) === 'd' ? renderDaily() : renderWeekly();
+      var p0 = key.charAt(0);
+      p0 === 'd' ? renderDaily() : p0 === 't' ? renderTech() : renderWeekly();
     });
   });
   document.getElementById('dq').addEventListener('input', function(e){ state.dq = e.target.value; renderDaily(); });
+  document.getElementById('tq').addEventListener('input', function(e){ state.tq = e.target.value; renderTech(); });
+  document.getElementById('tChip').addEventListener('change', function(e){ state.tChip = e.target.value; renderTech(); });
   document.getElementById('wq').addEventListener('input', function(e){ state.wq = e.target.value; renderWeekly(); });
   document.getElementById('wPeople').addEventListener('change', function(e){ state.wPeople = Number(e.target.value); renderWeekly(); });
   document.getElementById('wMkt').addEventListener('change', function(e){ state.wMkt = e.target.value; renderWeekly(); });
   document.addEventListener('click', function(e){
     var b = e.target.closest('th button'); if (!b) return;
-    var k = b.getAttribute('data-k'), which = b.getAttribute('data-s') === 'd' ? 'dSort' : 'wSort';
+    var src = b.getAttribute('data-s'), k = b.getAttribute('data-k');
+    var which = src === 'd' ? 'dSort' : src === 't' ? 'tSort' : 'wSort';
     var cur = state[which];
     if (which === 'dSort' && !cur) cur = state.dMode === 'it' ? {k:'itS', dir:-1} : {k:'xS', dir:-1};
     if (which === 'wSort' && !cur) cur = {k:'s' + state.wTier, dir:-1};
+    if (which === 'tSort' && !cur) cur = {k:'vr', dir:-1};
     state[which] = {k:k, dir: cur && cur.k === k ? -cur.dir : (k === 'c' ? 1 : -1)};
-    which === 'dSort' ? renderDaily() : renderWeekly();
+    which === 'dSort' ? renderDaily() : which === 'tSort' ? renderTech() : renderWeekly();
   });
   var tabs = document.querySelectorAll('.tab');
   tabs.forEach(function(tab){
@@ -314,8 +394,9 @@ footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
 
   Promise.all([
     load('data/daily/latest.json', 'daily', 'dErr', '每日更新'),
+    load('data/tech/latest.json', 'tech', 'tErr', '技術訊號'),
     load('data/weekly/latest.json', 'weekly', 'wErr', '每週更新')
-  ]).then(function(){ updateAsof(); renderDaily(); renderWeekly(); });
+  ]).then(function(){ updateAsof(); renderDaily(); renderTech(); renderWeekly(); });
 })();
 </script>
 </body>
