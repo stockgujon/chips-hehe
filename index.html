@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="googlebot" content="noindex, nofollow">
+<title>大戶籌碼雷達</title>
+<style>
+:root{
+  --paper:#eceee8; --sheet:#f7f8f4; --ink:#1d2635; --muted:#5f6878; --rule:#cfd3c9;
+  --up:#c23a2b; --up-soft:#f3dcd8; --down:#2e7d58; --tick-off:#d9dcd4; --focus:#2f5fb3;
+  --font:"PingFang TC","Noto Sans TC","Microsoft JhengHei","Heiti TC",system-ui,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{--paper:#161b22;--sheet:#1d232c;--ink:#e3e6ea;--muted:#9aa3b1;--rule:#313945;
+    --up:#f06b5a;--up-soft:#3a2522;--down:#5cc28f;--tick-off:#343c48;--focus:#7aa7ff}
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);
+  font-size:15px;line-height:1.6;-webkit-text-size-adjust:100%}
+.wrap{max-width:1120px;margin:0 auto;padding:20px 16px 40px}
+header h1{font-size:28px;line-height:1.2;margin:8px 0 4px;font-weight:800;letter-spacing:.02em}
+.asof{color:var(--muted);font-size:13px;margin:0}
+.tabs{display:flex;gap:0;margin:20px 0 0;border-bottom:2px solid var(--ink)}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:inherit;font-weight:700;
+  padding:10px 16px;cursor:pointer;border-radius:6px 6px 0 0}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--paper)}
+.panel{background:var(--sheet);border:1px solid var(--rule);border-top:0;padding:14px 14px 6px}
+.controls{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.group{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.group>span{font-size:13px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.seg button{appearance:none;border:0;background:none;color:var(--ink);font:inherit;font-size:14px;
+  padding:5px 11px;cursor:pointer;border-left:1px solid var(--rule)}
+.seg button:first-child{border-left:0}
+.seg button[aria-pressed="true"]{background:var(--up);color:#fff}
+select,input[type=search]{font:inherit;font-size:14px;color:var(--ink);background:var(--paper);
+  border:1px solid var(--rule);border-radius:6px;padding:5px 8px}
+input[type=search]{width:9.5em}
+button:focus-visible,select:focus-visible,input:focus-visible,th button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.note{font-size:13px;color:var(--muted);margin:10px 0 8px}
+.note strong{color:var(--ink)}
+.count{font-weight:700;color:var(--ink)}
+.scroll{overflow-x:auto;margin:0 -14px;border-top:1px solid var(--rule)}
+table{border-collapse:collapse;width:100%;min-width:760px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--rule)}
+th{font-size:12px;color:var(--muted);font-weight:600;background:var(--sheet);position:sticky;top:0}
+th button{appearance:none;border:0;background:none;color:inherit;font:inherit;cursor:pointer;padding:0}
+th[aria-sort] button{color:var(--ink)}
+th[aria-sort="descending"] button::after{content:" ▼";font-size:10px}
+th[aria-sort="ascending"] button::after{content:" ▲";font-size:10px}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--sheet);z-index:1}
+td:first-child b{font-weight:700;margin-right:6px}
+td:first-child a{color:inherit;text-decoration:none}
+td:first-child a:hover{text-decoration:underline}
+.mkt{font-size:12px;color:var(--muted);margin-left:4px}
+.pos{color:var(--up)} .neg{color:var(--down)}
+.streak{display:inline-flex;align-items:center;gap:8px}
+.ticks{display:inline-flex;gap:2px}
+.ticks i{display:block;width:5px;height:14px;border-radius:1px;background:var(--tick-off)}
+.ticks i.on{background:var(--up)}
+.streak b{min-width:2.2em;text-align:right;font-weight:700}
+tr.hot td{background:var(--up-soft)}
+tr.hot td:first-child{background:var(--up-soft)}
+.empty{padding:28px 6px;text-align:center;color:var(--muted)}
+.err{border-left:4px solid var(--up);background:var(--up-soft);padding:10px 12px;margin:12px 0;font-size:14px}
+details{margin:22px 0 0;font-size:14px;color:var(--muted)}
+details summary{cursor:pointer;color:var(--ink);font-weight:600}
+details p{margin:6px 0}
+footer{margin-top:32px;background:var(--ink);color:var(--paper);text-align:center;padding:16px;border-radius:6px;font-size:14px}
+footer small{display:block;opacity:.7;font-size:12px;margin-top:2px}
+@media (max-width:600px){header h1{font-size:23px}.tab{padding:9px 12px;font-size:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>大戶籌碼雷達</h1>
+    <p class="asof" id="asof">讀取資料中…</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-daily" aria-selected="true" aria-controls="panel-daily">每日：外資與投信</button>
+    <button class="tab" role="tab" id="tab-weekly" aria-selected="false" aria-controls="panel-weekly">每週：集保大戶</button>
+  </div>
+
+  <section class="panel" id="panel-daily" role="tabpanel" aria-labelledby="tab-daily">
+    <div class="controls">
+      <div class="group"><span>指標</span>
+        <div class="seg" data-key="dMode">
+          <button data-v="fr" aria-pressed="true">外資持股連升</button>
+          <button data-v="it" aria-pressed="false">投信連買</button>
+          <button data-v="both" aria-pressed="false">兩者同時</button>
+        </div></div>
+      <div class="group"><span>連續</span>
+        <div class="seg" data-key="dMin">
+          <button data-v="1" aria-pressed="false">1 天+</button>
+          <button data-v="2" aria-pressed="false">2 天+</button>
+          <button data-v="3" aria-pressed="true">3 天+</button>
+          <button data-v="5" aria-pressed="false">5 天+</button>
+        </div></div>
+      <div class="group"><input type="search" id="dq" placeholder="代號或名稱" aria-label="搜尋代號或名稱"></div>
+    </div>
+    <p class="note" id="d-note"></p>
+    <div class="scroll"><table id="d-table"></table></div>
+  </section>
+
+  <section class="panel" id="panel-weekly" role="tabpanel" aria-labelledby="tab-weekly" hidden>
+    <div class="controls">
+      <div class="group"><span>大戶</span>
+        <div class="seg" data-key="wTier">
+          <button data-v="400" aria-pressed="true">400 張以上</button>
+          <button data-v="1000" aria-pressed="false">1000 張以上</button>
+        </div></div>
+      <div class="group"><span>人數連升</span>
+        <div class="seg" data-key="wMin">
+          <button data-v="2" aria-pressed="true">2 週+</button>
+          <button data-v="3" aria-pressed="false">3 週+</button>
+          <button data-v="5" aria-pressed="false">5 週+</button>
+        </div></div>
+      <div class="group"><span>大戶至少</span>
+        <select id="wPeople" aria-label="大戶人數下限">
+          <option value="1">1 人</option><option value="3" selected>3 人</option>
+          <option value="5">5 人</option><option value="10">10 人</option><option value="30">30 人</option>
+        </select></div>
+      <div class="group"><select id="wMkt" aria-label="市場">
+          <option value="">上市＋上櫃</option><option value="上市">只看上市</option><option value="上櫃">只看上櫃</option>
+        </select></div>
+      <div class="group"><input type="search" id="wq" placeholder="代號或名稱" aria-label="搜尋代號或名稱"></div>
+    </div>
+    <p class="note" id="w-note"></p>
+    <div class="scroll"><table id="w-table"></table></div>
+  </section>
+
+  <details>
+    <summary>這些數字怎麼算</summary>
+    <p><strong>外資持股連升</strong>：全體外資及陸資持股比率比前一個交易日高，連續幾天。持平就中斷。資料來源為證交所，僅含上市普通股。</p>
+    <p><strong>投信連買</strong>：投信買賣超為正（買超），連續幾天。累計為這段期間的買超張數合計。</p>
+    <p><strong>集保大戶人數</strong>：集保結算所股權分散表，每週一次。400 張以上為持股分級 12～15 級合計，1000 張以上為第 15 級（超過 1,000 張）。人數比前一週多才算上升，持平或中間缺週就中斷。</p>
+    <p>連升 2 週需要 3 週的資料。集保開放資料只提供最新一週，所以歷史從網站開始運作那週起累積。</p>
+    <p>人數變多不一定代表籌碼集中，增資、減資或分割都會影響，請搭配大戶持股比例一起看。紅底列為兩項期間變化都上升。</p>
+  </details>
+
+  <footer>僅為個人用途，不做任何商業利益行為<small>網頁製作：股匠理財部落</small></footer>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var gh = location.hostname.match(/^([^.]+)\.github\.io$/);
+  var repo = location.pathname.split('/').filter(Boolean)[0];
+  var BASE = gh && repo ? 'https://raw.githubusercontent.com/' + gh[1] + '/' + repo + '/main/' : './';
+
+  var state = { dMode:'fr', dMin:3, wTier:'400', wMin:2, dq:'', wq:'', wPeople:3, wMkt:'',
+    dSort:null, wSort:null, daily:null, weekly:null, dErr:'', wErr:'' };
+
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function fmtInt(n){ return n == null ? '—' : Number(n).toLocaleString('zh-TW'); }
+  function signed(n, digits){
+    if (n == null) return '<span>—</span>';
+    var s = digits != null ? Math.abs(n).toFixed(digits) : Math.abs(n).toLocaleString('zh-TW');
+    if (n > 0) return '<span class="pos">+' + s + '</span>';
+    if (n < 0) return '<span class="neg">−' + s + '</span>';
+    return '<span>0</span>';
+  }
+  function ticks(k, unit){
+    if (!k) return '—';
+    var shown = Math.min(k, 10), h = '<span class="streak"><span class="ticks" aria-hidden="true">';
+    for (var i = 0; i < 10; i++) h += '<i' + (i < shown ? ' class="on"' : '') + '></i>';
+    return h + '</span><b>' + k + '</b>' + unit + '</span>';
+  }
+  function mdDate(iso){ return iso ? iso.slice(5).replace('-', '/') : ''; }
+  function stockCell(r){
+    return '<b>' + esc(r.c) + '</b>' + esc(r.n) + (r.m ? '<span class="mkt">' + esc(r.m) + '</span>' : '');
+  }
+  function match(r, q){ q = q.trim(); return !q || r.c.indexOf(q) === 0 || (r.n || '').indexOf(q) >= 0; }
+
+  function renderTable(el, cols, rows, sort, sortKey){
+    var h = '<thead><tr>';
+    cols.forEach(function(c){
+      var aria = sort && sort.k === c.k ? ' aria-sort="' + (sort.dir < 0 ? 'descending' : 'ascending') + '"' : '';
+      h += '<th scope="col"' + aria + '>' + (c.k ? '<button data-k="' + c.k + '" data-s="' + sortKey + '">' + c.t + '</button>' : c.t) + '</th>';
+    });
+    h += '</tr></thead><tbody>';
+    if (!rows.length) h += '<tr><td class="empty" colspan="' + cols.length + '">沒有符合條件的股票。試著把連續天數或週數調低。</td></tr>';
+    rows.forEach(function(r){
+      h += '<tr' + (r._hot ? ' class="hot"' : '') + '>';
+      cols.forEach(function(c){ h += '<td>' + c.f(r) + '</td>'; });
+      h += '</tr>';
+    });
+    el.innerHTML = h + '</tbody>';
+  }
+  function applySort(rows, sort){
+    if (!sort) return rows;
+    return rows.slice().sort(function(a, b){
+      var x = a[sort.k], y = b[sort.k];
+      if (typeof x === 'string') return sort.dir * x.localeCompare(y);
+      return sort.dir * ((x == null ? -Infinity : x) - (y == null ? -Infinity : y));
+    });
+  }
+
+  function renderDaily(){
+    var note = document.getElementById('d-note'), table = document.getElementById('d-table');
+    if (state.dErr){ note.innerHTML = '<div class="err">' + state.dErr + '</div>'; table.innerHTML = ''; return; }
+    var d = state.daily; if (!d) return;
+    var min = state.dMin, mode = state.dMode;
+    var rows = d.rows.filter(function(r){
+      if (!match(r, state.dq)) return false;
+      if (mode === 'fr') return r.frS >= min;
+      if (mode === 'it') return r.itS >= min;
+      return r.frS >= min && r.itS >= min;
+    }).map(function(r){ r._hot = r.frS >= min && r.itS >= min; return r; });
+    var sort = state.dSort || (mode === 'it' ? {k:'itS', dir:-1} : {k:'frS', dir:-1});
+    rows = applySort(rows, sort);
+    note.innerHTML = '<span class="count">符合 ' + rows.length + ' 檔</span>　資料日 ' + mdDate(d.asOf) +
+      '，已存 ' + d.days + ' 個交易日（連續天數最多能算到 ' + d.maxStreak + ' 天）';
+    renderTable(table, [
+      {t:'股票', k:'c', f:stockCell},
+      {t:'外資持股%', k:'fr', f:function(r){ return r.fr == null ? '—' : r.fr.toFixed(2); }},
+      {t:'較前日', k:'frD1', f:function(r){ return signed(r.frD1, 2); }},
+      {t:'外資連升', k:'frS', f:function(r){ return ticks(r.frS, '天'); }},
+      {t:'期間增減（百分點）', k:'frSD', f:function(r){ return r.frS ? signed(r.frSD, 2) : '—'; }},
+      {t:'投信今日（張）', k:'it', f:function(r){ return signed(r.it); }},
+      {t:'投信連買', k:'itS', f:function(r){ return ticks(r.itS, '天'); }},
+      {t:'連買累計（張）', k:'itSum', f:function(r){ return r.itS ? signed(r.itSum) : '—'; }}
+    ], rows, sort, 'd');
+  }
+
+  function renderWeekly(){
+    var note = document.getElementById('w-note'), table = document.getElementById('w-table');
+    if (state.wErr){ note.innerHTML = '<div class="err">' + state.wErr + '</div>'; table.innerHTML = ''; return; }
+    var w = state.weekly; if (!w) return;
+    var t = state.wTier, min = state.wMin;
+    var nK = 'n' + t, dK = 'd' + t, sK = 's' + t, pK = 'p' + t, spK = 'sp' + t;
+    var rows = w.rows.filter(function(r){
+      return r[sK] >= min && r[nK] >= state.wPeople && (!state.wMkt || r.m === state.wMkt) && match(r, state.wq);
+    }).map(function(r){ r._hot = r[spK] > 0; return r; });
+    var sort = state.wSort ? {k: state.wSort.k.replace(/400|1000/, t), dir: state.wSort.dir} : {k: sK, dir: -1};
+    rows = applySort(rows, sort);
+    var need = min + 1, msg = '';
+    if (w.weeks < need) {
+      msg = '<br><strong>目前只累積 ' + w.weeks + ' 週資料，連升 ' + min + ' 週需要 ' + need + ' 週，大約還要 ' + (need - w.weeks) + ' 週才會開始出現。</strong>';
+    }
+    note.innerHTML = '<span class="count">符合 ' + rows.length + ' 檔</span>　集保資料日 ' + mdDate(w.asOf) +
+      '，已累積 ' + w.weeks + ' 週（自 ' + mdDate(w.firstDate) + ' 起）' + msg;
+    renderTable(table, [
+      {t:'股票', k:'c', f:stockCell},
+      {t:'大戶人數', k:nK, f:function(r){ return fmtInt(r[nK]); }},
+      {t:'較上週', k:dK, f:function(r){ return signed(r[dK]); }},
+      {t:'人數連升', k:sK, f:function(r){ return ticks(r[sK], '週'); }},
+      {t:'大戶持股%', k:pK, f:function(r){ return r[pK].toFixed(2); }},
+      {t:'期間持股變化（百分點）', k:spK, f:function(r){ return signed(r[spK], 2); }},
+      {t:'股東總人數', k:'tot', f:function(r){ return fmtInt(r.tot); }}
+    ], rows, sort, 'w');
+  }
+
+  function updateAsof(){
+    var parts = [];
+    if (state.daily) parts.push('每日資料 ' + state.daily.asOf);
+    if (state.weekly) parts.push('集保資料 ' + state.weekly.asOf);
+    document.getElementById('asof').textContent = parts.length ? parts.join('　') : '資料尚未產生';
+  }
+
+  function load(path, key, errKey, label){
+    return fetch(BASE + path + '?t=' + Date.now(), {cache:'no-store'}).then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function(j){ state[key] = j; }).catch(function(e){
+      state[errKey] = '讀不到' + label + '（' + esc(e.message) + '）。如果是剛建好的網站，請到 GitHub 的 Actions 頁面手動執行一次「' + label + '」的 workflow。';
+    });
+  }
+
+  // 互動
+  document.querySelectorAll('.seg').forEach(function(seg){
+    seg.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if (!b) return;
+      var key = seg.getAttribute('data-key'), v = b.getAttribute('data-v');
+      state[key] = /Min$/.test(key) ? Number(v) : v;
+      seg.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
+      if (key === 'dMode') state.dSort = null;
+      key.charAt(0) === 'd' ? renderDaily() : renderWeekly();
+    });
+  });
+  document.getElementById('dq').addEventListener('input', function(e){ state.dq = e.target.value; renderDaily(); });
+  document.getElementById('wq').addEventListener('input', function(e){ state.wq = e.target.value; renderWeekly(); });
+  document.getElementById('wPeople').addEventListener('change', function(e){ state.wPeople = Number(e.target.value); renderWeekly(); });
+  document.getElementById('wMkt').addEventListener('change', function(e){ state.wMkt = e.target.value; renderWeekly(); });
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('th button'); if (!b) return;
+    var k = b.getAttribute('data-k'), which = b.getAttribute('data-s') === 'd' ? 'dSort' : 'wSort';
+    var cur = state[which];
+    if (which === 'dSort' && !cur) cur = state.dMode === 'it' ? {k:'itS', dir:-1} : {k:'frS', dir:-1};
+    if (which === 'wSort' && !cur) cur = {k:'s' + state.wTier, dir:-1};
+    state[which] = {k:k, dir: cur && cur.k === k ? -cur.dir : (k === 'c' ? 1 : -1)};
+    which === 'dSort' ? renderDaily() : renderWeekly();
+  });
+  var tabs = document.querySelectorAll('.tab');
+  tabs.forEach(function(tab){
+    tab.addEventListener('click', function(){
+      tabs.forEach(function(t){
+        var on = t === tab;
+        t.setAttribute('aria-selected', String(on));
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+    });
+  });
+
+  Promise.all([
+    load('data/daily/latest.json', 'daily', 'dErr', '每日更新'),
+    load('data/weekly/latest.json', 'weekly', 'wErr', '每週更新')
+  ]).then(function(){ updateAsof(); renderDaily(); renderWeekly(); });
+})();
+</script>
+</body>
+</html>
