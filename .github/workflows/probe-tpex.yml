@@ -1,0 +1,19 @@
+name: 診斷：櫃買收盤行情
+
+on:
+  workflow_dispatch:   # 只能手動執行，沒有排程
+
+permissions:
+  contents: read       # 只讀，不會寫入任何資料
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: 測試櫃買端點
+        run: node scripts/probe-tpex.mjs
