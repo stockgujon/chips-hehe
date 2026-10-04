@@ -125,6 +125,9 @@ footer small{display:block;opacity:.7;font-family:var(--font);font-size:12px;let
           <button data-v="3" aria-pressed="true">3 天+</button>
           <button data-v="5" aria-pressed="false">5 天+</button>
         </div></div>
+      <div class="group"><select id="dMkt" aria-label="市場">
+          <option value="">上市＋上櫃</option><option value="上市">只看上市</option><option value="上櫃">只看上櫃</option>
+        </select></div>
       <div class="group"><input type="search" id="dq" placeholder="代號或名稱" aria-label="搜尋代號或名稱"></div>
     </div>
     <p class="note" id="d-note"></p>
@@ -182,15 +185,15 @@ footer small{display:block;opacity:.7;font-family:var(--font);font-size:12px;let
     <summary>這些數字怎麼算</summary>
     <p><strong>外資連買</strong>：外資買賣超為正（買超），連續幾天，採「外陸資買賣超（不含外資自營商）」。累計為這段期間的買超張數合計。</p>
     <p><strong>投信連買</strong>：投信買賣超為正，連續幾天，算法同上。</p>
-    <p><strong>外資持股%</strong>：全體外資及陸資持股比率，僅供參考。增資、減資或註銷庫藏股會改變分母，比率變動不一定代表外資有買賣。</p>
-    <p>每日資料來源為證交所，目前僅含上市普通股。紅底列為外資與投信同時連買達到所選天數。</p>
+    <p><strong>外資持股%</strong>：全體外資及陸資持股比率，僅供參考，目前只有上市股票。增資、減資或註銷庫藏股會改變分母，比率變動不一定代表外資有買賣。</p>
+    <p>每日籌碼包含上市與上櫃普通股，上市來自證交所、上櫃來自櫃買中心。淺土黃底色的列為外資與投信同時連買達到所選天數。</p>
     <p><strong>帶量突破</strong>：收盤價高於前 20 個交易日的最高價，成交量達前 20 日均量的 1.5 倍以上，且站上 20 日線。</p>
     <p><strong>多頭回測</strong>：5 日線 &gt; 20 日線 &gt; 60 日線且 20 日線上揚，前 5 日收盤曾高於 20 日線 3% 以上，今天最低價回到 20 日線上方 2% 以內、收盤守住 20 日線。</p>
     <p><strong>盤整突破</strong>：前一日 5、10、20 日線彼此差距在 2% 以內，今天收紅上漲、站上三條均線，量比 1.5 倍以上。</p>
     <p>三組訊號都先排除 20 日均量不足 500 張、收盤高於 20 日線超過 10% 的股票。價格未還原權息，近 20 個交易日內除權息的股票會標示「除息」，均線與新高可能失真。籌碼欄位取自每日籌碼資料，日期可能比技術資料晚一晚更新。技術指標描述的是已發生的走勢，僅供縮小觀察名單參考。</p>
     <p><strong>集保大戶人數</strong>：集保結算所股權分散表，每週一次。400 張以上為持股分級 12～15 級合計，1000 張以上為第 15 級（超過 1,000 張）。人數比前一週多才算上升，持平或中間缺週就中斷。</p>
     <p>連升 2 週需要 3 週的資料。集保開放資料只提供最新一週，所以歷史從網站開始運作那週起累積。</p>
-    <p>人數變多不一定代表籌碼集中，增資、減資或分割都會影響，請搭配大戶持股比例一起看。每週頁的紅底列為期間大戶持股比例同步上升。</p>
+    <p>人數變多不一定代表籌碼集中，增資、減資或分割都會影響，請搭配大戶持股比例一起看。每週頁的淺土黃底色的列為期間大戶持股比例同步上升。</p>
   </details>
 
   <footer>僅為個人用途，不做任何商業利益行為<small>網頁製作：股匠理財部落</small></footer>
@@ -203,7 +206,7 @@ footer small{display:block;opacity:.7;font-family:var(--font);font-size:12px;let
   var repo = location.pathname.split('/').filter(Boolean)[0];
   var BASE = gh && repo ? 'https://raw.githubusercontent.com/' + gh[1] + '/' + repo + '/main/' : './';
 
-  var state = { tSig:'brk', tChip:'', tq:'', tSort:null, tech:null, tErr:'', dMode:'x', dMin:3, wTier:'400', wMin:2, dq:'', wq:'', wPeople:3, wMkt:'',
+  var state = { dMkt:'', tSig:'brk', tChip:'', tq:'', tSort:null, tech:null, tErr:'', dMode:'x', dMin:3, wTier:'400', wMin:2, dq:'', wq:'', wPeople:3, wMkt:'',
     dSort:null, wSort:null, daily:null, weekly:null, dErr:'', wErr:'' };
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -259,6 +262,7 @@ footer small{display:block;opacity:.7;font-family:var(--font);font-size:12px;let
     var min = state.dMin, mode = state.dMode;
     var rows = d.rows.filter(function(r){
       if (!match(r, state.dq)) return false;
+      if (state.dMkt && r.m !== state.dMkt) return false;
       if (mode === 'x') return r.xS >= min;
       if (mode === 'it') return r.itS >= min;
       return r.xS >= min && r.itS >= min;
@@ -391,6 +395,7 @@ footer small{display:block;opacity:.7;font-family:var(--font);font-size:12px;let
       p0 === 'd' ? renderDaily() : p0 === 't' ? renderTech() : renderWeekly();
     });
   });
+  document.getElementById('dMkt').addEventListener('change', function(e){ state.dMkt = e.target.value; renderDaily(); });
   document.getElementById('dq').addEventListener('input', function(e){ state.dq = e.target.value; renderDaily(); });
   document.getElementById('tq').addEventListener('input', function(e){ state.tq = e.target.value; renderTech(); });
   document.getElementById('tChip').addEventListener('change', function(e){ state.tChip = e.target.value; renderTech(); });
